@@ -153,6 +153,9 @@
   .word-instead span { color: var(--text2); text-decoration: line-through; }
   .word-def { font-size: 13px; color: var(--text2); margin-bottom: 8px; line-height: 1.5; }
   .word-example { font-size: 13px; color: var(--text); font-style: italic; padding: 8px 12px; background: var(--surface2); border-radius: 6px; border-left: 2px solid var(--accent-dim); line-height: 1.5; }
+  .speak-btn { background: none; border: 1px solid var(--border2); border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 12px; color: var(--text3); transition: all 0.15s; margin-left: 6px; vertical-align: middle; line-height: 1; font-family: 'DM Sans', sans-serif; }
+  .speak-btn:hover { color: var(--accent); border-color: var(--accent-dim); }
+  .speak-btn.speaking { color: var(--green); border-color: var(--green); }
 
   /* QUIZ */
   .quiz-banner { background: #0f1a2a; border: 1px solid #1e3a5a; border-radius: 10px; padding: 16px 18px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
@@ -488,9 +491,10 @@ Return ONLY this JSON, no markdown:
     let html = '<div class="vocab-grid">';
     parsed.words.forEach(w => {
       saveLearnedWord(w);
+      const spkId = 'spk-' + w.word.replace(/\s/g,'') + Date.now();
       html += `<div class="word-card">
         <div class="word-header"><span class="word-title">${escHtml(w.word)}</span><span class="word-pos">${escHtml(w.part_of_speech)}</span><span class="word-tag ${tagMap[w.category] || 'tag-pro'}">${tagLabel[w.category] || w.category}</span></div>
-        <div class="word-instead">Instead of: <span>${escHtml(w.instead_of)}</span></div>
+        <div class="word-instead">Instead of: <span>${escHtml(w.instead_of)}</span> <button class="speak-btn" id="${spkId}" onclick="speakWord('${w.word.replace(/'/g,"\\'")}','${spkId}')">&#9654; hear it</button></div>
         <div class="word-def">${escHtml(w.definition)}</div>
         <div class="word-example">"${escHtml(w.example)}"</div>
       </div>`;
@@ -519,7 +523,8 @@ Return ONLY this JSON, no markdown:
     const parsed = JSON.parse(result.text.replace(/```json|```/g, '').trim());
     let html = `<div class="original-line" style="margin-bottom:14px;">Alternatives for: <span>"${escHtml(parsed.input_word || word)}"</span></div><div class="alt-word-list">`;
     parsed.alternatives.forEach(a => {
-      html += `<div class="alt-word"><span class="alt-word-name">${escHtml(a.word)}</span><span class="alt-word-def">${escHtml(a.part_of_speech)} — ${escHtml(a.definition)}</span><span class="alt-word-ex">"${escHtml(a.example)}"</span></div>`;
+      const spkId = 'spk-alt-' + a.word.replace(/\s/g,'') + Date.now();
+      html += `<div class="alt-word"><span class="alt-word-name">${escHtml(a.word)} <button class="speak-btn" id="${spkId}" onclick="speakWord('${a.word.replace(/'/g,"\\'")}','${spkId}')">&#9654; hear it</button></span><span class="alt-word-def">${escHtml(a.part_of_speech)} — ${escHtml(a.definition)}</span><span class="alt-word-ex">"${escHtml(a.example)}"</span></div>`;
     });
     html += '</div>';
     out.innerHTML = html;
@@ -585,7 +590,7 @@ function renderDailyWord(w, out) {
   const catLabel = { professional: 'Professional', persuasive: 'Persuasive', conversational: 'Conversational' };
   const tagMap = { professional: 'tag-pro', persuasive: 'tag-per', conversational: 'tag-cas' };
   out.innerHTML = `<div class="wotd-card">
-    <div class="wotd-word">${escHtml(w.word)}</div>
+    <div class="wotd-word">${escHtml(w.word)} <button class="speak-btn" id="spk-wotd" onclick="speakWord('${w.word.replace(/'/g,"\\'")}','spk-wotd')" style="font-size:13px;padding:4px 10px;">&#9654; hear it</button></div>
     <div class="wotd-meta"><em>${escHtml(w.part_of_speech)}</em> &nbsp;·&nbsp; <span class="word-tag ${tagMap[w.category] || 'tag-pro'}" style="vertical-align:middle;">${catLabel[w.category] || w.category}</span></div>
     <div class="wotd-instead">Instead of: <span>${escHtml(w.instead_of)}</span></div>
     <div class="wotd-def">${escHtml(w.definition)}</div>
@@ -714,6 +719,21 @@ function exportWords() {
   const a = document.createElement('a'); a.href = url; a.download = 'my-learned-words.txt';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// ── SPEAK ────────────────────────────────────────
+function speakWord(word, btnId) {
+  if (!window.speechSynthesis) { alert('Your browser does not support text-to-speech.'); return; }
+  window.speechSynthesis.cancel();
+  const btn = btnId ? document.getElementById(btnId) : null;
+  const utt = new SpeechSynthesisUtterance(word);
+  utt.rate = 0.85;
+  utt.pitch = 1;
+  utt.lang = 'en-US';
+  if (btn) { btn.textContent = '▶ playing'; btn.classList.add('speaking'); }
+  utt.onend = () => { if (btn) { btn.textContent = '▶ hear it'; btn.classList.remove('speaking'); } };
+  utt.onerror = () => { if (btn) { btn.textContent = '▶ hear it'; btn.classList.remove('speaking'); } };
+  window.speechSynthesis.speak(utt);
 }
 
 // ── HELPERS ──────────────────────────────────────
