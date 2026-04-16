@@ -279,6 +279,7 @@
       </div>
       <button class="btn-sm" onclick="loadWordsOfDay(true)">New words</button>
       <button class="btn-sm" onclick="exportWords()">Export words</button>
+      <button class="btn-sm" onclick="resetWordHistory()" style="color:var(--red);border-color:var(--red);">Reset history</button>
     </div>
 
     <div id="wotd-output"><div class="loading-state" style="padding:20px 0;text-align:left;"><span style="color:var(--text3);font-size:13px;">Save your API key above, then click "New words" to load.</span></div></div>
@@ -461,10 +462,31 @@ const perThemes = ['emotional appeals','building trust','creating urgency','fram
 const casThemes = ['expressing enthusiasm','describing people','talking about ideas','social situations','giving opinions','describing experiences','humor and wit','empathy and support','casual storytelling','pop culture and trends','food and lifestyle','travel and adventure'];
 function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+const USED_WORDS_KEY = 'comm_coach_used_words';
+
 function getLearnedWords() { try { return JSON.parse(localStorage.getItem(LEARNED_KEY) || '[]'); } catch(e) { return []; } }
 function saveLearnedWord(w) {
   const words = getLearnedWords();
-  if (!words.find(x => x.word === w.word)) { words.push({ ...w, learnedAt: new Date().toISOString() }); localStorage.setItem(LEARNED_KEY, JSON.stringify(words)); }
+  if (!words.find(x => x.word.toLowerCase() === w.word.toLowerCase())) {
+    words.push({ ...w, learnedAt: new Date().toISOString() });
+    localStorage.setItem(LEARNED_KEY, JSON.stringify(words));
+  }
+}
+function getUsedWords() { try { return JSON.parse(localStorage.getItem(USED_WORDS_KEY) || '[]'); } catch(e) { return []; } }
+function addUsedWords(wordList) {
+  const used = getUsedWords();
+  wordList.forEach(w => { if (!used.includes(w.toLowerCase())) used.push(w.toLowerCase()); });
+  // Keep last 200 to avoid prompt bloat
+  localStorage.setItem(USED_WORDS_KEY, JSON.stringify(used.slice(-200)));
+}
+function resetWordHistory() {
+  if (!confirm('This will clear your word history so the tool can start fresh. Your learned words list and quiz progress will also be cleared. Continue?')) return;
+  localStorage.removeItem(USED_WORDS_KEY);
+  localStorage.removeItem(LEARNED_KEY);
+  localStorage.removeItem(WOTD_KEY);
+  localStorage.removeItem(QUIZ_STATE_KEY);
+  vocabLoaded = false;
+  alert('Word history cleared! Generate new words to start fresh.');
 }
 
 async function loadWordsOfDay(force) {
@@ -475,13 +497,17 @@ async function loadWordsOfDay(force) {
   const proTheme = pickRandom(proThemes), perTheme = pickRandom(perThemes), casTheme = pickRandom(casThemes);
   const seed = Math.floor(Math.random() * 99999);
   const diffMap = { beginner: 'common but often misused or underused words, suitable for everyday speakers', intermediate: 'moderately sophisticated words that educated speakers use regularly', advanced: 'sophisticated, nuanced words that appear in high-level professional or literary writing' };
+  const usedWords = getUsedWords();
+  const excludeList = usedWords.slice(-80).join(', ') || 'none yet';
   const result = await callAPI(
-    `You are a vocabulary coach. Generate exactly 6 words. Difficulty: ${activeDiff} — ${diffMap[activeDiff]}.
+    `You are a vocabulary coach. Generate exactly 6 BRAND NEW words never shown to this user before. Difficulty: ${activeDiff} — ${diffMap[activeDiff]}.
 Themes: 2 professional words about "${proTheme}", 2 persuasive words about "${perTheme}", 2 conversational words about "${casTheme}".
-Do NOT use: utilize, leverage, facilitate, plethora, ubiquitous, synergy, paradigm, holistic. Seed: ${seed}.
+CRITICAL — Do NOT use any of these already-used words: ${excludeList}.
+Also never use: utilize, leverage, facilitate, plethora, ubiquitous, synergy, paradigm, holistic, candor, eloquent, astute, perspicacious, gregarious, ephemeral.
+You MUST pick completely different words from the excluded list. Seed: ${seed}.
 Return ONLY this JSON, no markdown:
 {"words":[{"word":"","part_of_speech":"","category":"professional|persuasive|conversational","instead_of":"simpler word it replaces","definition":"clear 1-sentence definition","example":"natural example sentence"}]}`,
-    `Generate 6 ${activeDiff} words. Seed: ${seed}`, 2000
+    `Generate 6 fresh ${activeDiff} words not in this list: ${excludeList}. Seed: ${seed}`, 2000
   );
   if (result.error) { out.innerHTML = `<div class="error-box">Error: ${result.error}</div>`; return; }
   try {
@@ -499,6 +525,7 @@ Return ONLY this JSON, no markdown:
         <div class="word-example">"${escHtml(w.example)}"</div>
       </div>`;
     });
+    addUsedWords(parsed.words.map(w => w.word));
     html += '</div>';
     out.innerHTML = html;
     vocabLoaded = true;
@@ -552,22 +579,26 @@ async function loadDailyWord() {
 
   out.innerHTML = '<div class="loading-state"><div class="spinner"></div>Generating today\'s word...</div>';
   const seed = Math.floor(Math.random() * 99999);
+  const usedWords = getUsedWords();
+  const excludeList = usedWords.slice(-100).join(', ') || 'none yet';
   const result = await callAPI(
-    `You are a vocabulary coach. Generate exactly 1 featured word of the day that is genuinely useful for communication. Vary widely across visits — seed: ${seed}.
+    `You are a vocabulary coach. Generate exactly 1 featured word of the day that is genuinely useful for communication.
+CRITICAL — Do NOT use any of these already-used words: ${excludeList}.
+Also never use: candor, utilize, leverage, facilitate, plethora, ubiquitous, synergy, paradigm, holistic, eloquent, astute.
+Pick a word that is fresh, interesting, and not commonly chosen. Seed: ${seed}.
 Return ONLY this JSON, no markdown:
 {"word":"","part_of_speech":"","category":"professional|persuasive|conversational","instead_of":"simpler word it replaces","definition":"clear 1-sentence definition","example":"natural, realistic example sentence"}`,
-    `Word of the day. Seed: ${seed}`, 600
+    `Word of the day — NOT any of these: ${excludeList}. Seed: ${seed}`, 600
   );
   if (result.error) { out.innerHTML = `<div class="error-box">Error: ${result.error}</div>`; return; }
   try {
     const parsed = JSON.parse(result.text.replace(/```json|```/g, '').trim());
-    // Save it
     const allStored = stored.history || [];
     allStored.push({ ...parsed, date: todayKey });
-    // Keep last 14 days
     const trimmed = allStored.slice(-14);
     localStorage.setItem(WOTD_KEY, JSON.stringify({ date: todayKey, word: parsed, history: trimmed }));
     saveLearnedWord(parsed);
+    addUsedWords([parsed.word]);
     renderDailyWord(parsed, out);
     renderQuizSection();
   } catch(e) { out.innerHTML = '<div class="error-box">Could not parse response. Try again.</div>'; }
@@ -600,32 +631,53 @@ function renderDailyWord(w, out) {
 }
 
 // ── QUIZ ─────────────────────────────────────────
-function renderQuizSection() {
+const QUIZ_STATE_KEY = 'comm_coach_quiz_state';
+
+function getQuizState() { try { return JSON.parse(localStorage.getItem(QUIZ_STATE_KEY) || '{}'); } catch(e) { return {}; } }
+function saveQuizState(state) { localStorage.setItem(QUIZ_STATE_KEY, JSON.stringify(state)); }
+
+function getWordsSinceLastQuiz() {
+  const state = getQuizState();
   const learned = getLearnedWords();
+  if (!state.lastQuizDate) return learned; // never taken quiz, all words count
+  // Return only words learned after the last quiz was completed
+  return learned.filter(w => w.learnedAt && w.learnedAt > state.lastQuizDate);
+}
+
+function renderQuizSection() {
   const quizSec = document.getElementById('quiz-section');
   const quizOut = document.getElementById('quiz-output');
-  if (learned.length < 7) {
-    quizSec.style.display = 'block';
-    quizOut.innerHTML = `<div class="warn-box">You need at least 7 learned words to take the quiz. You have ${learned.length} so far — keep going!</div>`;
+  quizSec.style.display = 'block';
+
+  const state = getQuizState();
+  const newWords = getWordsSinceLastQuiz();
+  const totalLearned = getLearnedWords().length;
+  const needed = 7;
+
+  if (newWords.length < needed) {
+    const remaining = needed - newWords.length;
+    const sinceMsg = state.lastQuizDate
+      ? `Since your last quiz on ${new Date(state.lastQuizDate).toLocaleDateString()}, you've learned ${newWords.length} new word${newWords.length !== 1 ? 's' : ''}.`
+      : `You've learned ${newWords.length} word${newWords.length !== 1 ? 's' : ''} so far.`;
+    quizOut.innerHTML = `<div class="warn-box">${sinceMsg} Learn ${remaining} more to unlock the next quiz.</div>`;
     return;
   }
-  quizSec.style.display = 'block';
+
   quizOut.innerHTML = `<div class="quiz-banner">
-    <div class="quiz-banner-text"><strong>Quiz ready!</strong>You have ${learned.length} words in your collection.</div>
+    <div class="quiz-banner-text"><strong>Quiz ready!</strong> You've learned ${newWords.length} new words since your last quiz. Total in collection: ${totalLearned}.</div>
     <button class="btn-main" onclick="startQuiz()">Take the quiz</button>
   </div>`;
 }
 
 async function startQuiz() {
-  const learned = getLearnedWords();
-  // Pick up to 7 random words
-  const shuffled = learned.sort(() => Math.random() - 0.5).slice(0, 7);
+  const newWords = getWordsSinceLastQuiz();
+  // Use the new words for this quiz, up to 7
+  const shuffled = newWords.sort(() => Math.random() - 0.5).slice(0, 7);
   const out = document.getElementById('quiz-output');
   out.innerHTML = '<div class="loading-state"><div class="spinner"></div>Generating quiz questions...</div>';
 
-  // Generate wrong answers for each word
   const result = await callAPI(
-    `You are a quiz generator. For each word provided, generate 3 WRONG but plausible-sounding definitions. The wrong answers should be in the same style as a real definition — complete sentences, similar length — but factually incorrect for that word.
+    `You are a quiz generator. For each word provided, generate 3 WRONG but plausible-sounding definitions. Wrong answers should be complete sentences, similar length to the correct one, but factually incorrect for that word.
 Return ONLY this JSON, no markdown:
 {"questions":[{"word":"","correct":"","wrong":["","",""]}]}`,
     `Generate wrong answers for these words: ${JSON.stringify(shuffled.map(w => ({ word: w.word, correct: w.definition })))}`, 2000
@@ -634,7 +686,6 @@ Return ONLY this JSON, no markdown:
   if (result.error) { out.innerHTML = `<div class="error-box">Error: ${result.error}</div>`; return; }
   try {
     const parsed = JSON.parse(result.text.replace(/```json|```/g, '').trim());
-    // Merge with original word data
     quizWords = parsed.questions.map((q, i) => ({
       ...shuffled[i], ...q,
       options: shuffle([q.correct, ...q.wrong])
@@ -649,8 +700,6 @@ function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
 function renderQuizQuestion(out) {
   if (quizIndex >= quizWords.length) { renderQuizScore(out); return; }
   const q = quizWords[quizIndex];
-  const tagMap = { professional: 'tag-pro', persuasive: 'tag-per', conversational: 'tag-cas' };
-  const catLabel = { professional: 'Professional', persuasive: 'Persuasive', conversational: 'Conversational' };
   let optHtml = q.options.map((opt, i) =>
     `<button class="quiz-opt" onclick="answerQuiz(${i})">${escHtml(opt)}</button>`
   ).join('');
@@ -688,11 +737,12 @@ function nextQuizQuestion() {
 function renderQuizScore(out) {
   const pct = Math.round((quizScore / quizWords.length) * 100);
   const msg = pct === 100 ? 'Perfect score!' : pct >= 70 ? 'Great work!' : pct >= 50 ? 'Good effort!' : 'Keep practicing!';
+  // Save quiz completion time so the 7-word counter resets from now
+  saveQuizState({ lastQuizDate: new Date().toISOString() });
   out.innerHTML = `<div class="quiz-score">
     <div class="quiz-score-num">${quizScore}/${quizWords.length}</div>
     <div class="quiz-score-label">${msg} You scored ${pct}%.</div>
-    <button class="btn-main" onclick="startQuiz()">Retake quiz</button>
-    &nbsp;
+    <div style="font-size:13px;color:var(--text2);margin-top:8px;margin-bottom:24px;">Learn 7 more new words to unlock your next quiz.</div>
     <button class="btn-ghost" onclick="renderQuizSection()">Back</button>
   </div>`;
 }
