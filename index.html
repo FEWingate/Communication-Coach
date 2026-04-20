@@ -198,6 +198,23 @@
 
   /* WOTD header row */
   .wotd-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+
+  /* PUNCTUATION */
+  .punct-corrected { font-family: 'Playfair Display', serif; font-size: 18px; color: var(--text); line-height: 1.7; padding: 16px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px; }
+  .punct-corrected mark { background: rgba(106,158,120,0.2); color: var(--green); border-radius: 3px; padding: 0 2px; font-style: normal; }
+  .punct-changes { margin-bottom: 20px; }
+  .punct-change-item { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .punct-change-item:last-child { border-bottom: none; }
+  .punct-change-num { font-size: 11px; font-weight: 500; color: var(--accent); min-width: 20px; padding-top: 2px; }
+  .punct-change-body { flex: 1; }
+  .punct-change-rule { font-size: 13px; color: var(--text); font-weight: 500; margin-bottom: 3px; }
+  .punct-change-exp { font-size: 13px; color: var(--text2); line-height: 1.5; }
+  .punct-change-before { font-size: 12px; color: var(--red); margin-top: 4px; font-style: italic; }
+  .punct-change-after { font-size: 12px; color: var(--green); font-style: italic; }
+  .punct-rewrite { background: #0f1a2a; border: 1px solid #1e3a5a; border-radius: 10px; padding: 16px 18px; margin-top: 4px; }
+  .punct-rewrite-label { font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: #5a8aaa; margin-bottom: 8px; }
+  .punct-rewrite-text { font-family: 'Playfair Display', serif; font-size: 16px; color: var(--text); line-height: 1.6; margin-bottom: 8px; }
+  .punct-rewrite-why { font-size: 13px; color: var(--text2); line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -227,6 +244,7 @@
   <!-- TABS -->
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('phraser')">Phrase Upgrader</button>
+    <button class="tab-btn" onclick="switchTab('punct')">Punctuation</button>
     <button class="tab-btn" onclick="switchTab('vocab')">Vocabulary Builder</button>
     <button class="tab-btn" onclick="switchTab('wotd')">Word of the Day</button>
   </div>
@@ -312,6 +330,34 @@
     </div>
   </div>
 
+  <!-- ═══ PUNCTUATION ═══ -->
+  <div class="tab-panel" id="panel-punct">
+    <div style="margin-bottom:20px;">
+      <div class="vocab-section-title">Punctuation Checker</div>
+      <div class="vocab-section-sub">Paste any sentence or paragraph. The app will fix punctuation, explain every change, and suggest rewrites for any unclear sentences.</div>
+    </div>
+
+    <div class="section-label">Try an example</div>
+    <div class="examples-row">
+      <span class="ex-chip" onclick="setPunct(this)">its a great day to learn new things dont you think</span>
+      <span class="ex-chip" onclick="setPunct(this)">however i wasnt sure if the meeting was on monday tuesday or wednesday</span>
+      <span class="ex-chip" onclick="setPunct(this)">the report which was due last friday still hasnt been submitted by john</span>
+      <span class="ex-chip" onclick="setPunct(this)">we need to talk about your performance its not where it needs to be</span>
+    </div>
+
+    <div class="input-box">
+      <textarea id="punct-input" rows="5" placeholder="Type or paste your sentence or paragraph here..."></textarea>
+      <div class="char-count" id="punct-char">0 characters</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-main" id="punct-btn" onclick="checkPunctuation()">Check it</button>
+      <button class="btn-ghost" onclick="clearPunct()">Clear</button>
+    </div>
+
+    <div id="punct-output"></div>
+  </div>
+
 </div>
 <script>
 const API_URL = 'https://api.anthropic.com/v1/messages';
@@ -375,7 +421,7 @@ async function callAPI(system, userMsg, maxTokens) {
 
 // ── TABS ─────────────────────────────────────────
 function switchTab(name) {
-  const tabs = ['phraser','vocab','wotd'];
+  const tabs = ['phraser','punct','vocab','wotd'];
   tabs.forEach((t,i) => {
     document.querySelectorAll('.tab-btn')[i].classList.toggle('active', t === name);
     document.getElementById('panel-'+t).classList.toggle('active', t === name);
@@ -769,6 +815,105 @@ function exportWords() {
   const a = document.createElement('a'); a.href = url; a.download = 'my-learned-words.txt';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// ── PUNCTUATION ──────────────────────────────────
+const punctInput = document.getElementById('punct-input');
+punctInput.addEventListener('input', () => {
+  const l = punctInput.value.length;
+  document.getElementById('punct-char').textContent = l + ' character' + (l !== 1 ? 's' : '');
+});
+function setPunct(el) { punctInput.value = el.textContent; punctInput.dispatchEvent(new Event('input')); }
+function clearPunct() { punctInput.value = ''; punctInput.dispatchEvent(new Event('input')); document.getElementById('punct-output').innerHTML = ''; }
+
+async function checkPunctuation() {
+  const text = punctInput.value.trim();
+  if (!text) return;
+  const out = document.getElementById('punct-output');
+  out.innerHTML = '<div class="loading-state"><div class="spinner"></div>Analyzing punctuation...</div>';
+  document.getElementById('punct-btn').disabled = true;
+
+  const result = await callAPI(
+    `You are a punctuation and grammar expert. The user provides a sentence or paragraph. You must:
+1. Return the fully corrected version with all punctuation fixed
+2. List every individual change made with the rule behind it and a brief explanation
+3. For any sentence that is unclear or awkward even after punctuation fixes, suggest a cleaner rewrite and explain why
+
+Return ONLY this JSON, no markdown:
+{
+  "corrected": "the fully corrected text",
+  "changes": [
+    {
+      "rule": "short name of the punctuation rule e.g. 'Apostrophe for contraction'",
+      "explanation": "one clear sentence explaining the change and why it was needed",
+      "before": "the original fragment with the error",
+      "after": "the corrected fragment"
+    }
+  ],
+  "rewrites": [
+    {
+      "original": "the unclear sentence as it appeared",
+      "rewrite": "a cleaner version of the sentence",
+      "why": "one sentence explaining what made it unclear and how the rewrite helps"
+    }
+  ]
+}
+If there are no punctuation errors, set changes to an empty array and say so in corrected.
+If no rewrites are needed, set rewrites to an empty array.`,
+    `Check this text: "${text}"`, 2000
+  );
+
+  document.getElementById('punct-btn').disabled = false;
+  if (result.error) { out.innerHTML = `<div class="error-box">Error: ${result.error}</div>`; return; }
+
+  try {
+    const parsed = JSON.parse(result.text.replace(/```json|```/g, '').trim());
+    let html = '';
+
+    // Corrected version
+    html += `<div style="font-size:11px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3);margin-bottom:10px;">Corrected version</div>`;
+    html += `<div class="punct-corrected">${escHtml(parsed.corrected)}</div>`;
+
+    // Copy corrected button
+    const copyId = 'copy-corrected-' + Date.now();
+    html += `<div style="display:flex;gap:8px;margin-bottom:24px;">
+      <button class="copy-btn" id="${copyId}" onclick="doCopy('${parsed.corrected.replace(/'/g,"\\'").replace(/\n/g,' ')}','${copyId}')">Copy corrected text</button>
+    </div>`;
+
+    // Changes breakdown
+    if (parsed.changes && parsed.changes.length > 0) {
+      html += `<div style="font-size:11px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3);margin-bottom:12px;">Changes made (${parsed.changes.length})</div>`;
+      html += `<div class="punct-changes">`;
+      parsed.changes.forEach((c, i) => {
+        html += `<div class="punct-change-item">
+          <div class="punct-change-num">${i + 1}</div>
+          <div class="punct-change-body">
+            <div class="punct-change-rule">${escHtml(c.rule)}</div>
+            <div class="punct-change-exp">${escHtml(c.explanation)}</div>
+            ${c.before ? `<div class="punct-change-before">Before: "${escHtml(c.before)}"</div>` : ''}
+            ${c.after ? `<div class="punct-change-after">After: "${escHtml(c.after)}"</div>` : ''}
+          </div>
+        </div>`;
+      });
+      html += `</div>`;
+    } else {
+      html += `<div class="success-box" style="margin-bottom:20px;">No punctuation errors found — your text looks good!</div>`;
+    }
+
+    // Rewrites
+    if (parsed.rewrites && parsed.rewrites.length > 0) {
+      html += `<div style="font-size:11px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3);margin-bottom:12px;">Suggested rewrites</div>`;
+      parsed.rewrites.forEach(r => {
+        html += `<div class="punct-rewrite" style="margin-bottom:12px;">
+          <div class="punct-rewrite-label">Suggested rewrite</div>
+          <div class="punct-rewrite-text">"${escHtml(r.rewrite)}"</div>
+          <div class="punct-rewrite-why">${escHtml(r.why)}</div>
+        </div>`;
+      });
+    }
+
+    out.innerHTML = html;
+  } catch(e) { out.innerHTML = '<div class="error-box">Could not parse response. Try again.</div>'; }
 }
 
 // ── SPEAK ────────────────────────────────────────
