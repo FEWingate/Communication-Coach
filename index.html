@@ -240,6 +240,7 @@
       <h1>Communication <span>Coach</span></h1>
       <p>Sharpen how you speak and write — phrase upgrades, vocabulary, and more.</p>
     </div>
+    <button onclick="showKeyBanner()" style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;padding:4px 0;font-family:'DM Sans',sans-serif;align-self:flex-start;margin-top:6px;">API settings</button>
   </div>
 
   <!-- API KEY -->
@@ -397,6 +398,11 @@ function saveKey() {
   setKeyMsg('Key saved!', true);
 }
 function clearKey() { localStorage.removeItem(STORAGE_KEY); vocabLoaded = false; renderKeyBanner(); }
+function showKeyBanner() {
+  const banner = document.getElementById('key-banner');
+  banner.style.display = 'block';
+  banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 function setKeyMsg(msg, ok) {
   const el = document.getElementById('key-msg');
   el.textContent = msg; el.style.color = ok ? 'var(--green)' : 'var(--red)';
@@ -410,13 +416,15 @@ function renderKeyBanner() {
   const row = document.getElementById('key-row');
   const clearBtn = document.getElementById('key-clear-btn');
   if (key) {
-    banner.classList.add('saved'); title.textContent = 'API Key Saved'; title.classList.add('ok');
-    sub.textContent = 'Your key is stored locally. Ready to use.';
-    row.style.display = 'none'; clearBtn.style.display = 'inline-block';
+    banner.style.display = 'none';
   } else {
-    banner.classList.remove('saved'); title.textContent = 'API Key Required'; title.classList.remove('ok');
+    banner.style.display = 'block';
+    banner.classList.remove('saved');
+    title.textContent = 'API Key Required';
+    title.classList.remove('ok');
     sub.textContent = "Paste your Anthropic API key below. Saved only in your browser — never shared.";
-    row.style.display = 'flex'; clearBtn.style.display = 'none';
+    row.style.display = 'flex';
+    clearBtn.style.display = 'none';
   }
 }
 async function callAPI(system, userMsg, maxTokens) {
